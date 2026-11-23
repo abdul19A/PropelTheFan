@@ -6,15 +6,20 @@ LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
 
 const byte servo_pin = 2;
 const byte joystickX = A0, joystickY = A1;
-const byte led_pins[4] = {A2, 4, 5, 6};
+const byte led_pins[4] = {A2, 4, 5, 6}; // using analog pin because I ran out
 const byte buzzer = 3;  
 
 const int buzzer_freq[] = {300, 400, 500, 600};
 
 Servo servo;
 
-char seq[]= "0013";
-int seq_len = 4;
+const char seq[]= "0101";
+const int seq_len = 4;
+
+const char RUNNING_SIGNAL = 'R';
+const char RESET_SIGNAL   = 'X';
+const char WINNING_SIGNAL = 'W';
+const char LOSING_SIGNAL  = 'L';
 
 long seq_timer = millis();
 const long on_dur = 1000;
@@ -24,9 +29,10 @@ const long setup_time = 3000;
 
 const int servo_locs [4]= {0, 45, 135, 180};
 const int deadzoneSqrd = 40*40; // out of fifty
-
 const int n_blinks_max = 2;
 
+// hmm could add a losing mechanic
+  
 int n_success_blinks = n_blinks_max;
 int cur_showing = 0;
 int n_match = 0;
@@ -37,7 +43,6 @@ bool accept_input = false;
 enum state: byte{
   start,
   show_seq,
-  inbetween,
   gather_input,
   eval_inputs,
   failed,
@@ -188,19 +193,19 @@ bool readingInput(){
   }
 }
 void evaluateInput(){
-  if (n_max == -1){
+  if (n_max == -1){ // failed
     cur_state = failed;
     n_max = 0;
   }
-  else if (n_match <= n_max){
+  else if (n_match <= n_max){ // keep going
     cur_state = gather_input;
   }
-  else if (n_max < seq_len-1){
+  else if (n_max < seq_len-1){ // all done with the sequence
     n_match = 0;
     cur_state = success;
     n_max++;
   }
-  else {
+  else { // wow got it all
     cur_state = ended;
   }
 }
@@ -221,57 +226,90 @@ bool starting(){
 void selectState(){
   state prev = cur_state;
   switch (cur_state){
-
-  case start:
+    case start:
     if (!starting()) cur_state = show_seq;
-  break;
+    break;
 
-  case show_seq:
+    case show_seq:
     lcd.setCursor(0, 0);
     lcd.print("sequence #");
     lcd.print(n_max+1);
-    if (!blinking()){
-      cur_state = gather_input;
-    }
-  break;
+    if (!blinking()) cur_state = gather_input;
+    break;
 
-  case gather_input:
-  if (!readingInput()) cur_state = eval_inputs;
-  break;
+    case gather_input:
+    if (!readingInput()) cur_state = eval_inputs;
+    break;
 
-  case eval_inputs:
-  evaluateInput();  // branches to other states
-  break;
-  
-  case failed:
-  lcd.setCursor(0, 0);
-  lcd.print("failed at #");
-  lcd.print(n_match+1);
-  if (!failing()) cur_state = show_seq;
-  break;
+    case eval_inputs:
+    evaluateInput();  // branches to other states automatically
+    break;
 
-  case success:
-  lcd.setCursor(0, 0);
+    case failed:
+    lcd.setCursor(0, 0);
+    lcd.print("failed at #");
+    lcd.print(n_match+1);
+    if (!failing()) cur_state = show_seq;
+    break;
+
+    case success:
+    lcd.setCursor(0, 0);
     lcd.print("Finished ");
     lcd.print(n_max);
-  if (!succeeded()) cur_state = show_seq;
-  break;
+    if (!succeeded()) cur_state = show_seq;
+    break;
 
-  case ended:
-  lcd.setCursor(0, 0);
-  lcd.print("YOU WON");
-  succeeded();
-  break;
+    case ended:
+    lcd.setCursor(0, 0);
+    lcd.print("YOU WON");
+    succeeded();
+    break;
   }
 
-  if (prev != cur_state){
+  if (prev != cur_state){ // reset timer based on new state
     seq_timer = millis();
     lcd.clear();
   }
 }
 
+void applyReset(){
+  // reset everything
+  lcd.clear();
+  noTone(buzzer);
+  servo.write(90);
+  for (int i = 0; i < 4; i++){
+    digitalWrite(led_pins[i], LOW);
+  }
+
+  n_success_blinks = n_blinks_max;
+  cur_showing = 0;
+  n_match = 0;
+  n_max = 0;
+  servo_on = false;
+  accept_input = false;
+  cur_state = start; // starts back up 
+  seq_timer = millis();
+}
+
+void TransmitState(){
+  // ended is when its over
+  if (cur_state == ended){
+    Serial.write(WINNING_SIGNAL);
+  }
+  else {
+    Serial.write(RUNNING_SIGNAL);
+  }
+}
+
+bool doReset(){
+  // note: this can be easily tested by writing directly to the arduino through a computer
+  if (Serial.available() > 0){
+    return RESET_SIGNAL == Serial.read();
+  }
+  return false;
+}
+
 void setup() {
-  randomSeed(analogRead(0)); // future?
   Serial.begin(9600);
   lcd.begin(16, 2);
 
@@ -282,11 +320,15 @@ void setup() {
     pinMode(led_pins[i], OUTPUT);
   }
 
-  pinMode(3, OUTPUT);
+  pinMode(buzzer, OUTPUT);
   servo.attach(servo_pin);
   servo.write(90);
 }
 
 void loop() { 
-  selectState();
+  selectState(); // do what its supposed to
+  TransmitState(); // <- send out
+  if (doReset()){ // <- read
+    applyReset();
+  }
 }
