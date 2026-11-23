@@ -3,12 +3,12 @@
 
 
 LiquidCrystal LCD(12, 11, 5, 4, 3, 2);
-
+   
 const int LEDPins[] = {6, 7, 8, 9};
-const int incButton = 10;
-const int decButton = 13;
+const int incButton = 13;
+const int decButton = 10;
 const int enterButton = A1;
-const int overseerAddress = 1;
+const int overseerAddress = 0x08;
 
 int targetNum;
 int playerCount;
@@ -93,7 +93,7 @@ void checkAnswer() {
     LCD.print("Correct!");
 
     LCD.setCursor(0, 1);
-    LCD.print("Challenge Passed.");
+    LCD.print("Challenge Passed");
 
     challengeComplete();
   }
@@ -133,10 +133,10 @@ void setup() {
   updateLEDs();
 
   LCD.setCursor(0, 0);
-  LCD.print("Decimal Binary Conversion");
+  LCD.print("Challenge #1");
 
   LCD.setCursor(0, 1);
-  LCD.print("Convert given binary to decimal.");
+  LCD.print("Num Conversion");
 
   previousTime = millis();
 }
